@@ -1,0 +1,7 @@
+.DS_Store
+/.vscode
+/include
+/lib
+/test
+.pio
+platformio.ini
