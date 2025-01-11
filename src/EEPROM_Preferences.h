@@ -4,11 +4,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-#define EEPROM_ADDRESS 0x50
-#define DATA_SIZE 21
-#define TYPE_SIZE 1
-#define KEY_SIZE 10
-#define RECORD_SIZE (TYPE_SIZE + KEY_SIZE + DATA_SIZE)
+#define EEPROM_FLT_MAX 3.4E+38
+#define EEPROM_FLT_MIN -3.4E+38
 
 enum EEPROM_24LCXX {
   //EEPROM_24LC01 = 128,
@@ -24,30 +21,55 @@ enum EEPROM_24LCXX {
 
 class EEPROM_Preferences {
   public:
-    EEPROM_Preferences(const uint8_t deviceAddress, const uint32_t deviceSize, TwoWire *wire = &Wire);
+    EEPROM_Preferences(const uint8_t deviceAddress, const uint16_t deviceSize, TwoWire *wire = &Wire);
 
-    void begin();
+    enum StatusCode {
+      OK = 0,
+      OUT_OF_MEMORY = 1,
+      KEY_NOT_FOUND = 2,
+      KEY_LENGTH_OVERFLOW = 3,
+      DATA_LENGTH_OVERFLOW = 4,
+      WRITE_PROTECTED = 5,
+    };
+
+    void begin(int8_t writeProtectPin = -1);
     bool isConnected();
 
+    uint32_t getUInt(const char* key, uint32_t defaultValue);
+    int32_t getInt(const char* key, int32_t defaultValue);
     char* getString(const char* key, const char* defaultValue);
-    int getInt(const char* key, int defaultValue);
     float getFloat(const char* key, float defaultValue);
     bool getBool(const char* key, bool defaultValue);
 
-    void writeString(const char* key, const char* value);
-    void writeInt(const char* key, int value);
-    void writeFloat(const char* key, float value);
-    void writeBool(const char* key, bool value);
+    StatusCode writeUInt(const char* key, uint32_t value);
+    StatusCode writeInt(const char* key, int32_t value);
+    StatusCode writeString(const char* key, const char* value);
+    StatusCode writeFloat(const char* key, float value);
+    StatusCode writeBool(const char* key, bool value);
 
-    void remove(const char* key);
+    StatusCode removeUInt(const char* key);
+    StatusCode removeInt(const char* key);
+    StatusCode removeString(const char* key);
+    StatusCode removeFloat(const char* key);
+    StatusCode removeBool(const char* key);
 
-    bool freeEEPROM();
+    void freeEEPROM();
+    void enableWrite();
+    void disableWrite();
+
+    const char* dumpRecord(uint16_t address);
   private:
+    static const uint8_t DATA_SIZE = 21;
+    static const uint8_t TYPE_SIZE = 1;
+    static const uint8_t KEY_SIZE = 10;
+    static const uint8_t RECORD_SIZE = TYPE_SIZE + KEY_SIZE + DATA_SIZE;
+
     enum DataType {
       TYPE_INT = 0x01,
-      TYPE_FLOAT = 0x02,
-      TYPE_STRING = 0x03,
-      TYPE_BOOL = 0x04
+      TYPE_UINT = 0x02,
+      TYPE_BOOL = 0x03,
+      TYPE_FLOAT = 0x04,
+      TYPE_STRING = 0x05
     };
 
     struct Record {
@@ -57,15 +79,18 @@ class EEPROM_Preferences {
     };
 
     TwoWire* _wire;
+    int8_t _writeProtectPin = -1;
     uint8_t _deviceAddress;
-    uint32_t _deviceSize;
+    uint16_t _deviceSize;
+    uint16_t _lastAddress = 0;
 
-    void _writeEEPROM(uint32_t address, byte* data, uint32_t length);
-    void _readEEPROM(uint32_t address, byte* buffer, uint32_t length);
-    byte _readByte(uint32_t address);
-    int32_t _nextAddress();
-    int32_t _findAddress(DataType type, const char* key);
-    void _writeRecord(Record record);
+    void _writeEEPROM(uint16_t address, byte* data, uint16_t length);
+    void _readEEPROM(uint16_t address, byte* buffer, uint16_t length);
+    void _writeCache(uint16_t value);
+    uint16_t _findAddress(DataType type, const char* key);
+    uint16_t _readCache();
+    StatusCode _remove(const char* key, DataType type);
+    StatusCode _writeRecord(Record record);
 };
 
 #endif

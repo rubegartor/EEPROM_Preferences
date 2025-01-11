@@ -1,6 +1,6 @@
 # EEPROM_Preferences (WIP)
 
-Arduino Library for I2C EEPROM - 24LC512/256/64/32/16/08/04/02/01.
+Arduino Library for I2C EEPROM - 24LC256/64/32/16/08/04/02/01.
 
 
 ## Description
@@ -35,7 +35,14 @@ void loop() {
 ### Constructor
 
 ```cpp
-EEPROM_Preferences(const uint8_t deviceAddress, const uint32_t deviceSize, TwoWire *wire = &Wire);
+EEPROM_Preferences(const uint8_t deviceAddress, const uint16_t deviceSize, TwoWire *wire = &Wire);
+```
+
+### Initialization
+
+* Initializes the eeprom and configures the write protection pin if necessary
+```cpp
+void begin(int8_t writeProtectPin = -1);
 ```
 
 ### Read methods
@@ -49,6 +56,11 @@ char* getString(const char* key, const char* defaultValue);
 * Obtains an int through a key, if the key is not found in memory, it will return the default value indicated in the second parameter
 ```cpp
 int getInt(const char* key, int defaultValue);
+```
+
+* Obtains an uint through a key, if the key is not found in memory, it will return the default value indicated in the second parameter
+```cpp
+int getUInt(const char* key, int defaultValue);
 ```
 
 * Obtains a float through a key, if the key is not found in memory, it will return the default value indicated in the second parameter
@@ -65,29 +77,64 @@ bool getBool(const char* key, bool defaultValue);
 
 * Writes a string to memory using the specified key
 ```cpp
-void writeString(const char* key, const char* value);
+StatusCode writeString(const char* key, const char* value);
 ```
 
 * Writes an int to memory using the specified key
 ```cpp
-void writeInt(const char* key, int value);
+StatusCode writeInt(const char* key, int32_t value);
+```
+
+* Writes an uint to memory using the specified key
+```cpp
+StatusCode writeUInt(const char* key, uint32_t value);
 ```
 
 * Writes a float to memory using the specified key
 ```cpp
-void writeFloat(const char* key, float value);
+StatusCode writeFloat(const char* key, float value);
 ```
 
 * Writes a bool to memory using the specified key
 ```cpp
-void writeBool(const char* key, bool value);
+StatusCode writeBool(const char* key, bool value);
 ```
 
 ### Others
 
-* Removes record by value from memory
+* Removes string record by value from memory and reallocate memory
 ```cpp
-void remove(const char* key);
+StatusCode removeString(const char* key);
+```
+
+* Removes int record by value from memory and reallocate memory
+```cpp
+StatusCode removeInt(const char* key);
+```
+
+* Removes uint record by value from memory and reallocate memory
+```cpp
+StatusCode removeUInt(const char* key);
+```
+
+* Removes bool record by value from memory and reallocate memory
+```cpp
+StatusCode removeBool(const char* key);
+```
+
+* Removes float record by value from memory and reallocate memory
+```cpp
+StatusCode removeFloat(const char* key);
+```
+
+* Enable write protection mode on the memory
+```cpp
+void enableWrite();
+```
+
+* Disable write protection mode on the memory
+```cpp
+void disableWrite();
 ```
 
 * Completely clears the memory (it takes some time to perform this operation)
@@ -95,22 +142,25 @@ void remove(const char* key);
 bool freeEEPROM();
 ```
 
-## Tested platforms
+* Dumps register data from EEPROM, address should be multiple of 32
+```cpp
+const char* dumpRecord(uint16_t address);
+```
 
-- [x]  Arduino AVR (Uno, Nano, Mega, etc.)
-- [x]  Espressif ESP32
-- [X]  RP2040
-- [x]  Teensy 4.1
+### StatusCode
 
+| Code | Text                                 |
+|------|--------------------------------------|
+| 0    | No errors found                      |
+| 1    | Memory is full                       |
+| 2    | Key not found (only on remove)       |
+| 3    | Key length overflow (only on write)  |
+| 4    | Data length overflow (only on write) |
+| 5    | Memory is write protected            |
 
 ## To-Do
 
 - [ ]  Add support to all 24LCXXX memories (only tested with 24LC256)
-- [ ]  Improve memory space, currently all records occupy 32 bytes
-- [ ]  Extend get/set methods to use all available types
-- [ ]  Add posibility to manage writeProtection
-- [ ]  Input validation
-- [ ]  Implement key<>address cache
 
 
 ## Credits

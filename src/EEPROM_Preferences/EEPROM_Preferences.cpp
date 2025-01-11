@@ -1,13 +1,19 @@
 #include <EEPROM_Preferences.h>
 
-EEPROM_Preferences::EEPROM_Preferences(const uint8_t deviceAddress, const uint32_t deviceSize, TwoWire *wire) {
+EEPROM_Preferences::EEPROM_Preferences(const uint8_t deviceAddress, const uint16_t deviceSize, TwoWire *wire) {
   _deviceAddress = deviceAddress;
   _deviceSize = deviceSize;
   _wire = wire;
 }
 
-void EEPROM_Preferences::begin() {
+void EEPROM_Preferences::begin(int8_t writeProtectPin) {
   _wire->begin();
+
+  if (writeProtectPin != -1) {
+    _writeProtectPin = writeProtectPin;
+    pinMode(_writeProtectPin, OUTPUT);
+    disableWrite();
+  }
 }
 
 bool EEPROM_Preferences::isConnected() {
@@ -16,11 +22,9 @@ bool EEPROM_Preferences::isConnected() {
 }
 
 char* EEPROM_Preferences::getString(const char* key, const char* defaultValue) {
-  int32_t address = _findAddress(DataType::TYPE_STRING, key);
+  uint16_t address = _findAddress(DataType::TYPE_STRING, key);
 
-  if (address == -1) {
-    return (char*)defaultValue;
-  }
+  if (address == (uint16_t)-1) return (char*)defaultValue;
 
   static char buffer[DATA_SIZE + 1];
 
@@ -31,28 +35,38 @@ char* EEPROM_Preferences::getString(const char* key, const char* defaultValue) {
   return buffer;
 }
 
-int EEPROM_Preferences::getInt(const char* key, int defaultValue) {
-  int32_t address = _findAddress(DataType::TYPE_INT, key);
+uint32_t EEPROM_Preferences::getUInt(const char* key, uint32_t defaultValue) {
+  uint16_t address = _findAddress(DataType::TYPE_UINT, key);
 
-  if (address == -1) {
-    return defaultValue;
-  }
+  if (address == (uint16_t)-1) return defaultValue;
 
   byte buffer[DATA_SIZE];
   _readEEPROM(address + TYPE_SIZE + KEY_SIZE, buffer, DATA_SIZE);
 
-  int value;
-  memcpy(&value, buffer, sizeof(int));
+  uint32_t value;
+  memcpy(&value, buffer, DATA_SIZE);
+
+  return value;
+}
+
+int32_t EEPROM_Preferences::getInt(const char* key, int32_t defaultValue) {
+  uint16_t address = _findAddress(DataType::TYPE_INT, key);
+
+  if (address == (uint16_t)-1) return defaultValue;
+
+  byte buffer[DATA_SIZE];
+  _readEEPROM(address + TYPE_SIZE + KEY_SIZE, buffer, DATA_SIZE);
+
+  int32_t value;
+  memcpy(&value, buffer, DATA_SIZE);
 
   return value;
 }
 
 float EEPROM_Preferences::getFloat(const char* key, float defaultValue) {
-  int32_t address = _findAddress(DataType::TYPE_FLOAT, key);
+  uint16_t address = _findAddress(DataType::TYPE_FLOAT, key);
 
-  if (address == -1) {
-    return defaultValue;
-  }
+  if (address == (uint16_t)-1) return defaultValue;
 
   byte buffer[DATA_SIZE];
   _readEEPROM(address + TYPE_SIZE + KEY_SIZE, buffer, DATA_SIZE);
@@ -64,11 +78,9 @@ float EEPROM_Preferences::getFloat(const char* key, float defaultValue) {
 }
 
 bool EEPROM_Preferences::getBool(const char* key, bool defaultValue) {
-  int32_t address = _findAddress(DataType::TYPE_BOOL, key);
+  uint16_t address = _findAddress(DataType::TYPE_BOOL, key);
 
-  if (address == -1) {
-    return defaultValue;
-  }
+  if (address == (uint16_t)-1) return defaultValue;
 
   byte buffer[DATA_SIZE];
   _readEEPROM(address + TYPE_SIZE + KEY_SIZE, buffer, DATA_SIZE);
@@ -79,81 +91,123 @@ bool EEPROM_Preferences::getBool(const char* key, bool defaultValue) {
   return value;
 }
 
-void EEPROM_Preferences::writeString(const char *key, const char *value) {
+EEPROM_Preferences::StatusCode EEPROM_Preferences::writeString(const char *key, const char *value) {
+  if (strlen(key) > KEY_SIZE) return StatusCode::KEY_LENGTH_OVERFLOW;
+  if (strlen(value) > DATA_SIZE) return StatusCode::DATA_LENGTH_OVERFLOW;
+
   Record record;
   record.type = DataType::TYPE_STRING;
   strcpy(record.key, key);
   strcpy((char*)record.data, value);
 
-  _writeRecord(record);
+  return _writeRecord(record);
 }
 
-void EEPROM_Preferences::writeInt(const char *key, int value) {
+EEPROM_Preferences::StatusCode EEPROM_Preferences::writeUInt(const char *key, uint32_t value) {
+  if (strlen(key) > KEY_SIZE) return StatusCode::KEY_LENGTH_OVERFLOW;
+  if (value > UINT32_MAX) return StatusCode::DATA_LENGTH_OVERFLOW;
+
+  Record record;
+  record.type = DataType::TYPE_UINT;
+  strcpy(record.key, key);
+  memcpy(record.data, &value, sizeof(uint32_t));
+
+  return _writeRecord(record);
+}
+
+EEPROM_Preferences::StatusCode EEPROM_Preferences::writeInt(const char *key, int32_t value) {
+  if (strlen(key) > KEY_SIZE) return StatusCode::KEY_LENGTH_OVERFLOW;
+  if (value > INT32_MAX || value < INT32_MIN) return StatusCode::DATA_LENGTH_OVERFLOW;
+
   Record record;
   record.type = DataType::TYPE_INT;
   strcpy(record.key, key);
-  memcpy(record.data, &value, sizeof(int));
+  memcpy(record.data, &value, sizeof(int32_t));
 
-  _writeRecord(record);
+  return _writeRecord(record);
 }
 
-void EEPROM_Preferences::writeFloat(const char *key, float value) {
+EEPROM_Preferences::StatusCode EEPROM_Preferences::writeFloat(const char *key, float value) {
+  if (strlen(key) > KEY_SIZE) return StatusCode::KEY_LENGTH_OVERFLOW;
+  if (value > EEPROM_FLT_MAX || value < EEPROM_FLT_MIN) return StatusCode::DATA_LENGTH_OVERFLOW;
+
   Record record;
   record.type = DataType::TYPE_FLOAT;
   strcpy(record.key, key);
   memcpy(record.data, &value, sizeof(float));
 
-  _writeRecord(record);
+  return _writeRecord(record);
 }
 
-void EEPROM_Preferences::writeBool(const char *key, bool value) {
+EEPROM_Preferences::StatusCode EEPROM_Preferences::writeBool(const char *key, bool value) {
+  if (strlen(key) > KEY_SIZE) return StatusCode::KEY_LENGTH_OVERFLOW;
+
   Record record;
   record.type = DataType::TYPE_BOOL;
   strcpy(record.key, key);
   memcpy(record.data, &value, sizeof(bool));
 
-  _writeRecord(record);
+  return _writeRecord(record);
 }
 
-void EEPROM_Preferences::remove(const char* key) {
-  int32_t address = _findAddress(DataType::TYPE_STRING, key);
-  if (address == -1) {
-    return;
+EEPROM_Preferences::StatusCode EEPROM_Preferences::removeUInt(const char* key) {
+  return _remove(key, DataType::TYPE_UINT);
+}
+
+EEPROM_Preferences::StatusCode EEPROM_Preferences::removeInt(const char* key) {
+  return _remove(key, DataType::TYPE_INT);
+}
+
+EEPROM_Preferences::StatusCode EEPROM_Preferences::removeString(const char* key) {
+  return _remove(key, DataType::TYPE_STRING);
+}
+
+EEPROM_Preferences::StatusCode EEPROM_Preferences::removeFloat(const char* key) {
+  return _remove(key, DataType::TYPE_FLOAT);
+}
+
+EEPROM_Preferences::StatusCode EEPROM_Preferences::removeBool(const char* key) {
+  return _remove(key, DataType::TYPE_BOOL);
+}
+
+void EEPROM_Preferences::freeEEPROM() {
+  const uint16_t blockSize = RECORD_SIZE * 2;
+  byte buffer[blockSize];
+  memset(buffer, 0xFF, blockSize);
+
+  for (uint16_t i = 0; i < _deviceSize; i += blockSize) {
+    _writeEEPROM(i, buffer, blockSize);
   }
 
-  byte buffer[RECORD_SIZE];
-  memset(buffer, 0xFF, RECORD_SIZE);
-
-  _writeEEPROM(address, buffer, RECORD_SIZE);
+  _writeCache(RECORD_SIZE);
 }
 
-bool EEPROM_Preferences::freeEEPROM() {
-  byte buffer[RECORD_SIZE];
-  memset(buffer, 0xFF, RECORD_SIZE);
-
-  for (uint32_t i = 0; i < _deviceSize; i += RECORD_SIZE) {
-    _writeEEPROM(i, buffer, RECORD_SIZE);
-  }
-
-  return true;
+void EEPROM_Preferences::enableWrite() {
+  if (_writeProtectPin == -1) return;
+  digitalWrite(_writeProtectPin, LOW);
 }
 
-void EEPROM_Preferences::_writeEEPROM(uint32_t address, byte* data, uint32_t length) {
+void EEPROM_Preferences::disableWrite() {
+  if (_writeProtectPin == -1) return;
+  digitalWrite(_writeProtectPin, HIGH);
+}
+
+void EEPROM_Preferences::_writeEEPROM(uint16_t address, byte* data, uint16_t length) {
   while (length > 0) {
     uint8_t pageOffset = address % 64;
     uint8_t pageRemaining = 64 - pageOffset;
-    uint8_t bufferLimit = min((uint32_t)30, length);
+    uint8_t bufferLimit = min((uint16_t)30, length);
     uint8_t bytesToWrite = min(pageRemaining, bufferLimit);
 
-    Wire.beginTransmission(EEPROM_ADDRESS);
+    Wire.beginTransmission(_deviceAddress);
     Wire.write((address >> 8) & 0xFF);
     Wire.write(address & 0xFF);
-    for (uint32_t i = 0; i < bytesToWrite; i++) {
+    for (uint8_t i = 0; i < bytesToWrite; i++) {
       Wire.write(data[i]);
     }
     Wire.endTransmission();
 
-    while (!isConnected());    
+    while (!isConnected());
 
     address += bytesToWrite;
     data += bytesToWrite;
@@ -161,69 +215,137 @@ void EEPROM_Preferences::_writeEEPROM(uint32_t address, byte* data, uint32_t len
   }
 }
 
-void EEPROM_Preferences::_readEEPROM(uint32_t address, byte* buffer, uint32_t length) {
-  Wire.beginTransmission(EEPROM_ADDRESS);
+void EEPROM_Preferences::_readEEPROM(uint16_t address, byte* buffer, uint16_t length) {
+  Wire.beginTransmission(_deviceAddress);
   Wire.write((address >> 8) & 0xFF);
   Wire.write(address & 0xFF);
   Wire.endTransmission();
 
-  Wire.requestFrom(EEPROM_ADDRESS, length);
-  for (uint32_t i = 0; i < length; i++) {
-    if (Wire.available()) {
-      buffer[i] = Wire.read();
-    }
+  Wire.requestFrom(_deviceAddress, length);
+  for (uint16_t i = 0; i < length; i++) {
+    if (Wire.available()) buffer[i] = Wire.read();
   }
 }
 
-byte EEPROM_Preferences::_readByte(uint32_t address) {
-  byte rdata = 0xFF;
-  _readEEPROM(address, &rdata, 1);
+EEPROM_Preferences::StatusCode EEPROM_Preferences::_remove(const char* key, DataType type) {
+  if (_writeProtectPin != -1 && digitalRead(_writeProtectPin) == HIGH) return StatusCode::WRITE_PROTECTED;
 
-  return rdata;
-}
+  uint16_t address = _findAddress(type, key);
+  if (address == (uint16_t)-1) return StatusCode::KEY_NOT_FOUND;
 
-int32_t EEPROM_Preferences::_nextAddress() {
-  for (uint32_t i = 0; i < _deviceSize; i += RECORD_SIZE) {
-    if (_readByte(i) == 0xFF) return i;
+  uint16_t lastUsedAddress = _readCache() - RECORD_SIZE;
+
+  byte emptyBuffer[RECORD_SIZE];
+  memset(emptyBuffer, 0xFF, RECORD_SIZE);
+
+
+  // If the address of the record to be deleted is the last used address, just clear the record and update the cache
+  // or
+  // If the address of the record to be deleted is the last address in memory, just clear the record and update the cache
+  if (address == lastUsedAddress || address == _deviceSize - RECORD_SIZE) {
+    _writeEEPROM(address, emptyBuffer, RECORD_SIZE);
+    _writeCache(address);
+
+    return StatusCode::OK;
   }
 
-  return -1;
+  // Copy the last record to the address of the deleted record
+  byte lastRecordBuffer[RECORD_SIZE];
+  _readEEPROM(lastUsedAddress, lastRecordBuffer, RECORD_SIZE);
+
+  // Clear the record at the current address
+  _writeEEPROM(address, emptyBuffer, RECORD_SIZE);
+
+  // Write the last record to the address of the deleted record
+  _writeEEPROM(address, lastRecordBuffer, RECORD_SIZE);
+
+  // Clear the last record
+  _writeEEPROM(lastUsedAddress, emptyBuffer, RECORD_SIZE);
+
+  // Update the last used address
+  _writeCache(_lastAddress - RECORD_SIZE);
+
+  return StatusCode::OK;
 }
 
-int32_t EEPROM_Preferences::_findAddress(DataType type, const char* key) {
-  for (uint32_t i = 0; i < _deviceSize; i += RECORD_SIZE) {
-    if (_readByte(i) == 0xFF) break;
-    if (_readByte(i + TYPE_SIZE) == 0xFF) break;
+uint16_t EEPROM_Preferences::_findAddress(DataType type, const char* key) {
+  if (strlen(key) > KEY_SIZE) return (uint16_t)-1;
 
-    byte memType = _readByte(i);
+  char buffer[KEY_SIZE + 1];
+  for (uint16_t i = RECORD_SIZE; i < _deviceSize; i += RECORD_SIZE) {
+    byte memType = 0xFF;
+    _readEEPROM(i, &memType, 1);
 
-    char buffer[KEY_SIZE + 1];
+    if (memType == 0xFF) break;
+    if (memType != type) continue;
+
     _readEEPROM(i + TYPE_SIZE, (byte*)buffer, KEY_SIZE);
     buffer[KEY_SIZE] = '\0';
 
-    if (memType == type && strcmp(key, buffer) == 0) {
-      return i;
-    }
+    if (strcmp(key, buffer) == 0) return i;
   }
 
-  return -1;
+  return (uint16_t)-1;
 }
 
-void EEPROM_Preferences::_writeRecord(Record record) {
-  int32_t address = _findAddress(record.type, record.key);
-  if (address == -1) {
-    address = _nextAddress();
-    if (address == -1) {
-      return;
-    }
-  }
+EEPROM_Preferences::StatusCode EEPROM_Preferences::_writeRecord(Record record) {
+  if (_writeProtectPin != -1 && digitalRead(_writeProtectPin) == HIGH) return StatusCode::WRITE_PROTECTED;
+
+  uint16_t address = _findAddress(record.type, record.key);
+  if (address == (uint16_t)-1) address = _readCache();
+
+  if (address >= _deviceSize) return StatusCode::OUT_OF_MEMORY;
 
   byte buffer[RECORD_SIZE];
-  memset(buffer, 0xFF, sizeof(buffer));
+  memset(buffer, 0xFF, RECORD_SIZE);
 
   buffer[0] = record.type;
-  memcpy(buffer + TYPE_SIZE, record.key, KEY_SIZE);
-  memcpy(buffer + TYPE_SIZE + KEY_SIZE, record.data, DATA_SIZE);
-  
-  _writeEEPROM(address, buffer, sizeof(buffer));
+
+  strncpy((char*)(buffer + 1), record.key, KEY_SIZE + 1);
+  strncpy((char*)(buffer + KEY_SIZE + 1), (char*)record.data, DATA_SIZE);
+
+  _writeEEPROM(address, buffer, RECORD_SIZE);
+  _writeCache(address + RECORD_SIZE);
+
+  return StatusCode::OK;
+}
+
+void EEPROM_Preferences::_writeCache(uint16_t value) {
+  byte cacheBuffer[RECORD_SIZE];
+  memset(cacheBuffer, 0xFF, RECORD_SIZE);
+
+  memcpy(cacheBuffer, &value, sizeof(value));
+
+  _writeEEPROM(0, cacheBuffer, RECORD_SIZE);
+
+  _lastAddress = value;
+}
+
+uint16_t EEPROM_Preferences::_readCache() {
+  if (_lastAddress != 0) return _lastAddress;
+
+  byte cacheBuffer[RECORD_SIZE];
+
+  _readEEPROM(0, cacheBuffer, RECORD_SIZE);
+
+  uint16_t value;
+  memcpy(&value, cacheBuffer, sizeof(value));
+
+  _lastAddress = value;
+
+  return _lastAddress;
+}
+
+const char* EEPROM_Preferences::dumpRecord(uint16_t address) {
+  if (address % RECORD_SIZE != 0) return "Invalid address";
+
+  static char output[96];
+  byte buffer[RECORD_SIZE];
+  _readEEPROM(address, buffer, RECORD_SIZE);
+
+  for (uint8_t j = 0; j < RECORD_SIZE; j++) {
+    snprintf(output + j * 3, sizeof(output) - j * 3, "%02X ", buffer[j]);
+  }
+
+  return output;
 }
