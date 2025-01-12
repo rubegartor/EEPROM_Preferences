@@ -30,6 +30,12 @@ void loop() {
 }
 ```
 
+## Connection diagram
+
+3.3V and 5V can be used!
+
+![Connection diagram](images/connection_diagram.png)
+
 ## Interface
 
 ### Constructor
