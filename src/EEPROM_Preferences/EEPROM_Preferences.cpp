@@ -44,7 +44,7 @@ uint32_t EEPROM_Preferences::getUInt(const char* key, uint32_t defaultValue) {
   _readEEPROM(address + TYPE_SIZE + KEY_SIZE, buffer, DATA_SIZE);
 
   uint32_t value;
-  memcpy(&value, buffer, DATA_SIZE);
+  memcpy(&value, buffer, sizeof(uint32_t));
 
   return value;
 }
@@ -58,7 +58,7 @@ int32_t EEPROM_Preferences::getInt(const char* key, int32_t defaultValue) {
   _readEEPROM(address + TYPE_SIZE + KEY_SIZE, buffer, DATA_SIZE);
 
   int32_t value;
-  memcpy(&value, buffer, DATA_SIZE);
+  memcpy(&value, buffer, sizeof(int32_t));
 
   return value;
 }
@@ -238,7 +238,6 @@ EEPROM_Preferences::StatusCode EEPROM_Preferences::_remove(const char* key, Data
   byte emptyBuffer[RECORD_SIZE];
   memset(emptyBuffer, 0xFF, RECORD_SIZE);
 
-
   // If the address of the record to be deleted is the last used address, just clear the record and update the cache
   // or
   // If the address of the record to be deleted is the last address in memory, just clear the record and update the cache
@@ -300,9 +299,25 @@ EEPROM_Preferences::StatusCode EEPROM_Preferences::_writeRecord(Record record) {
   memset(buffer, 0xFF, RECORD_SIZE);
 
   buffer[0] = record.type;
-
   strncpy((char*)(buffer + 1), record.key, KEY_SIZE + 1);
-  strncpy((char*)(buffer + KEY_SIZE + 1), (char*)record.data, DATA_SIZE);
+
+  switch (record.type) {
+    case DataType::TYPE_STRING:
+      strncpy((char*)(buffer + KEY_SIZE + 1), (char*)record.data, DATA_SIZE);
+      break;
+    case DataType::TYPE_INT:
+      memcpy((char*)(buffer + KEY_SIZE + 1), record.data, sizeof(int32_t));
+      break;
+    case DataType::TYPE_UINT:
+      memcpy((char*)(buffer + KEY_SIZE + 1), record.data, sizeof(uint32_t));
+      break;
+    case DataType::TYPE_BOOL:
+      memcpy((char*)(buffer + KEY_SIZE + 1), record.data, sizeof(bool));
+      break;
+    case DataType::TYPE_FLOAT:
+      memcpy((char*)(buffer + KEY_SIZE + 1), record.data, sizeof(float));
+      break;
+  }
 
   _writeEEPROM(address, buffer, RECORD_SIZE);
   _writeCache(address + RECORD_SIZE);
